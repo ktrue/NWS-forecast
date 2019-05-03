@@ -1,6 +1,6 @@
-## advforecast2.php (NOAA Forecast for all NWS areas)
+# advforecast2.php (NOAA/NWS Forecast for all NWS areas)
 
-Note: as of 12-Mar-2007, the Western Region website (www.wrh.noaa.gov) now offers the point-printable forecasts in the same format as the other regional websites, so this script now works for WRH, ERH, SRH and CRH websites.
+<img src="./forecast-sample.png" alt="Sample Output">
 
 Tom's [advforecast.php](http://www.carterlake.org/advforecast.php.txt) script takes the point-printable forecast from NOAA for Western, Eastern, Southern and Central region NOAA websites, and converts to a set of icons/conditions/temperatures and text forecast for inclusion on your webpage. My mods add XHTML 1.0-Strict output and the ability to handle a redirection for county forecasts (offered by www.crh.noaa.gov) in case a point-printable forecast is not available. See these threads for the erh2crh version ([http://www.wxforum.net/viewtopic.php?p=3768](https://www.wxforum.net/viewtopic.php?p=3768), and [http://www.weather-watch.com/smf/index.php/topic,22504.0.html](https://www.weather-watch.com/smf/index.php/topic,22504.0.html) ) The latest version of this script also offers automatic failover to the Zone forecast if the point-printable forecast is not available. Set "$NOAAZone = 'ssZnnn';" in the code for your NOAA warning zone.
 
