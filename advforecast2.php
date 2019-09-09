@@ -185,7 +185,7 @@ $forceDualIconURL = false; // for TESTING prior to 7-Jul-2015 when new icons wer
 $getGridpointData = false; // =true; for getting gridpoint data, =false for not getting the data
 //
 // following is for FUTURE hourly forecast/graphics..
-$getHourlyData = true; // =true; for getting hourly data, =false for not getting the data
+$getHourlyData = false; // =true; for getting hourly data, =false for not getting the data
 
 if(file_exists('Settings.php')) { include_once('Settings.php'); }
 // overrides from Settings.php if available
