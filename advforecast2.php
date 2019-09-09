@@ -57,9 +57,10 @@
 //  Version 5.10 - 13-Apr-2019 - fix for HTTP/2 responses from api.weather.gov
 //  Version 5.11 - 30-Apr-2019 - use new point->meta->gridpoint method for point forecast URL data
 //  Version 5.12 - 01-May-2019 - fix for link URL at bottom of page
+//  Version 5.13 - 08-Sep-2019 - fix for link URL with NWS discontinuation of forecast-v3.weather.gov site
 //
 
-$Version = 'advforecast2.php (JSON) - V5.12 - 01-May-2019';
+$Version = 'advforecast2.php (JSON) - V5.13 - 08-Aug-2019';
 
 //
 // import NOAA Forecast info
@@ -184,7 +185,7 @@ $forceDualIconURL = false; // for TESTING prior to 7-Jul-2015 when new icons wer
 $getGridpointData = false; // =true; for getting gridpoint data, =false for not getting the data
 //
 // following is for FUTURE hourly forecast/graphics..
-$getHourlyData = false; // =true; for getting hourly data, =false for not getting the data
+$getHourlyData = true; // =true; for getting hourly data, =false for not getting the data
 
 if(file_exists('Settings.php')) { include_once('Settings.php'); }
 // overrides from Settings.php if available
@@ -1212,10 +1213,12 @@ if ($PrintMode) {
 <p>&nbsp;</p>
 <p>Forecast from <a href="<?php
   if (strlen($usingFile) > 0) {
-    echo htmlspecialchars(FCSTURL."/zone/".$META['forecastZone']);
+    echo htmlspecialchars('https://forecast.weather.gov/MapClick.php?zoneid='.$META['forecastZone'].'&zflg=1');
   }
   else {
-    echo htmlspecialchars( FCSTURL."/point/".$META['point']);
+		list($lat,$lon) = explode(',',$META['point']);
+		echo htmlspecialchars("https://forecast.weather.gov/MapClick.php?lat=$lat&lon=$lon&unit=0&lg=english");
+//    echo htmlspecialchars( FCSTURL."/point/".$META['point']);
   } ?>">NOAA-NWS</a>
 for <?php
   echo $forecastcity; ?>. <?php
