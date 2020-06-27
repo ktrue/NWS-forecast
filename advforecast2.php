@@ -58,9 +58,11 @@
 //  Version 5.11 - 30-Apr-2019 - use new point->meta->gridpoint method for point forecast URL data
 //  Version 5.12 - 01-May-2019 - fix for link URL at bottom of page
 //  Version 5.13 - 08-Sep-2019 - fix for link URL with NWS discontinuation of forecast-v3.weather.gov site
+//  Version 5.14 - 10-May-2020 - fix for Alert link URL for alerts-v2.weather.gov (Thanks Jasiu!)
+//  Version 5.15 - 25-Jun-2020 - updated diagnostic info to help diagnose Akamai cache issues from api.weather.gov site
 //
 
-$Version = 'advforecast2.php (JSON) - V5.13 - 08-Aug-2019';
+$Version = 'advforecast2.php (JSON) - V5.15 - 25-Jun-2020';
 
 //
 // import NOAA Forecast info
@@ -148,7 +150,6 @@ $NWSforecasts = array(
 	"MSZ066|Ellisville, MS|https://forecast.weather.gov/MapClick.php?lat=31.62265&lon=-89.23384&unit=0&lg=english&FcstType=text&TextType=2",
   "NEZ066|Lincoln, NE|https://forecast.weather.gov/MapClick.php?CityName=Lincoln&state=NE&site=OAX&textField1=40.8164&textField2=-96.6882&e=0&TextType=2",
 	"IAZ066|Clinton, IA|https://forecast-v3.weather.gov/point/41.839,-90.192",
-
 );
 //*/
 //*
@@ -211,8 +212,6 @@ if(isset($_REQUEST['rows'])) {
 	if($_REQUEST['rows'] == '2') {$showTwoIconRows = true;  }
 }
 
-$doDebug = (isset($_REQUEST['debug']) and preg_match('|y|i', $_REQUEST['debug'])) ? true : false;
-
 if (isset($_REQUEST['rows'])) {
   if ($_REQUEST['rows'] == '1') {
     $showTwoIconRows = false;
@@ -237,7 +236,7 @@ else {
   define('APIURL', "https://api.weather.gov");
   define('FCSTURL', "https://forecast-v3.weather.gov");
   define('ALERTAPIURL','https://api.weather.gov/alerts?active=1&point=');
-  define('ALERTURL', 'https://alerts-v2.weather.gov/products/'); 
+  define('ALERTURL', 'https://alerts-v2.weather.gov/#/?id='); // Jasiu fix 10-May-2020
 }
 
 // get the selected zone code
@@ -395,6 +394,7 @@ $META = get_meta_info($cacheName, $fileName, $backupfileName);
 
 if (isset($META['forecastZone']) and $META['forecastZone'] !== $NOAAZone) {
   $Status.= "<!-- WARNING: NOAAZone='$NOAAZone' is not correct.  Will use '" . $META['forecastZone'] . "' for this point location per NWS. -->\n";
+	$NOAAZone = $META['forecastZone'];
 }
 
 
@@ -447,7 +447,14 @@ if ($Force == 2) {
   $lastURL = $backupfileName; // remember if error encountered
   $fSize = strlen($html);
   $Status.= "<!-- loaded $usingFile $backupfileName - $fSize bytes -->\n";
-  if (strpos($html, '{') !== false) { // got a file.. save it
+  $stuff = explode("\r\n\r\n",$html); // maybe we have more than one header due to redirects.
+  $content = (string)array_pop($stuff); // last one is the content
+  $headers = (string)array_pop($stuff); // next-to-last-one is the headers
+  preg_match('/HTTP\/\S+ (\d+)/', $headers, $m);
+	//$Status .= "<!-- m=".print_r($m,true)." -->\n";
+	//$Status .= "<!-- html=".print_r($html,true)." -->\n";
+	$lastRC = (string)$m[1];
+  if (strpos($html, '{') !== false and $lastRC == '200') { // got a file.. save it
     $fp = fopen($cacheName, "w");
     if ($fp) {
       $write = fputs($fp, $html);
@@ -485,9 +492,12 @@ if ($Force != 2) {
   preg_match('!"updated":\s*"([^"]+)"!is', $html, $matches);
   if (isset($matches[1])) {
     $age = time() - strtotime($matches[1]);
+		$ts = $matches[1];
     if ($age > 18 * 60 * 60) {
       $agehms = sec2hmsADV($age);
-      $Status.= "<!-- point forecast more than 18hrs old (age h:m:s is $agehms) .. use Zone forecast instead -->\n";
+      $Status.= "<!-- point forecast more than 18hrs old (age h:m:s is $agehms) updated:'$ts' .. use Zone forecast instead -->\n";
+			list($headers,$content) = explode("\r\n\r\n",$html);
+			$Status .= "<!-- headers from the gridpoint request\n".$headers."\n -->\n";
       $Force = 2;
       $usingFile = "(Zone forecast)";
       $html = ADV_fetchUrlWithoutHanging($backupfileName);
@@ -514,6 +524,18 @@ if ($Force != 2) {
 $stuff = explode("\r\n\r\n",$html); // maybe we have more than one header due to redirects.
 $content = (string)array_pop($stuff); // last one is the content
 $headers = (string)array_pop($stuff); // next-to-last-one is the headers
+// check age of forecast
+preg_match('!"updated":\s*"([^"]+)"!is', $html, $matches);
+if (isset($matches[1])) {
+	$age = time() - strtotime($matches[1]);
+	$ts = $matches[1];
+	if ($age > 18 * 60 * 60) {
+		$agehms = sec2hmsADV($age);
+		$Status.= "<!-- forecast more than 18hrs old (age h:m:s is $agehms) updated:'$ts' -->\n";
+		list($headers,$content) = explode("\r\n\r\n",$html);
+		$Status .= "<!-- headers from the $usingFile request\n".$headers."\n -->\n";
+	}
+}
 $FCSTJSON = json_decode($content, true); // parse the JSON into an associative array
 
 if (strlen($content > 10) and function_exists('json_last_error')) { // report status, php >= 5.3.0 only
@@ -549,7 +571,7 @@ if (strlen($content > 10) and function_exists('json_last_error')) { // report st
 
   $Status.= "<!-- JSON decode $JSONerror -->\n";
   if (jason_last_error() !== JSON_ERROR_NONE) {
-    $Status.= "<!-- content='" . print_r($content, true) . " -->\n";
+    $Status.= "<!-- content='" . print_r($content, true) . "' -->\n";
   }
 }
 
@@ -963,7 +985,15 @@ if (strlen($alertContents) > 1) { // got some alerts.. process
     foreach($ALERTJSON['@graph'] as $i => $ALERT) {
       $expireUTC = strtotime($ALERT['expires']);
       $Status.= "<!-- alert expires " . date($timeFormat, $expireUTC) . " (" . $ALERT['expires'] . ") -->\n";
-      if (time() < $expireUTC) {
+      if ( 
+			    (time() < $expireUTC)  && // V5.15 unexpired alerts w/in one of our zones - thanks to Jasiu!
+          ( 
+					  (in_array($META["forecastZone"], $ALERT["geocode"]["UGC"]) ) ||
+            (in_array($META["fireWeatherZone"], $ALERT["geocode"]["UGC"]) ) ||
+            (in_array($META["countyZone"], $ALERT["geocode"]["UGC"]) ) 
+				  )
+				 )
+      {
         $forecastwarnings.= '<a href="' . ALERTURL . $ALERT['id'] . '"' . ' title="' . $ALERT['headline'] . "\n---\n" . $ALERT['description'] . '" target="_blank">' . '<strong><span style="color: red">' . $ALERT['event'] . "</span></strong></a><br/>\n";
       }
       else {
@@ -1064,7 +1094,7 @@ if ($PrintMode) {
     <tr>
       <td style="text-align: center">Updated: <?php
   echo $forecastupdated; ?>
-          </td><!--end forecastupdated-->
+          </td>
     </tr>
     <?php
   echo $ddMenu ?>
@@ -1252,7 +1282,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 
   // get contents from one URL and return as string
 
-  global $Status, $needCookie /*, $URLcache */;
+  global $Status, $needCookie,$doDebug /*, $URLcache */;
   $useFopen = false;
   $overall_start = time();
   if (!$useFopen) {
@@ -1274,7 +1304,9 @@ function ADV_fetchUrlWithoutHanging($inurl)
 //    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0');
     curl_setopt($ch, CURLOPT_HTTPHEADER, // request LD-JSON format
     array(
-      "Accept: application/ld+json"
+      "Accept: application/ld+json",
+			"Cache-control: no-cache",
+			"Pragma: akamai-x-cache-on, akamai-x-get-request-id"
     ));
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $numberOfSeconds); //  connection timeout
     curl_setopt($ch, CURLOPT_TIMEOUT, $numberOfSeconds); //  data timeout
@@ -1370,7 +1402,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
     $content = (string)array_pop($stuff); // last one is the content
     $headers = (string)array_pop($stuff); // next-to-last-one is the headers
 
-    if ($cinfo['http_code'] <> '200') {
+    if ($doDebug or $cinfo['http_code'] <> '200') {
       $Status.= "<!-- headers returned:\n" . $headers . "\n -->\n";
     }
 
@@ -2186,8 +2218,8 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
   // make the zone forecast URL into a metadata request URL
 
   $metaZoneURL = $zoneURL;
-  $metaZoneURL = str_replace('/forecast', '', $metaZoneURL);
-  $metaZoneURL = str_replace('JSON-LD', 'forecast', $metaZoneURL);
+  $metaZoneURL = preg_replace('!/forecast$!', '', $metaZoneURL);
+  //$metaZoneURL = str_replace('JSON-LD', 'forecast', $metaZoneURL);
   $ourZone = '';
   if (preg_match('|/([^/]+)/forecast|i', $zoneURL, $matches)) {
     $ourZone = $matches[1];
