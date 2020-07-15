@@ -1,5 +1,4 @@
 <?php
-
 // error_reporting(E_ALL);
 // This is a more advanced version of the forecast script
 // It uses file caching and feed failure to better handle when NOAA is down
@@ -60,10 +59,11 @@
 //  Version 5.13 - 08-Sep-2019 - fix for link URL with NWS discontinuation of forecast-v3.weather.gov site
 //  Version 5.14 - 10-May-2020 - fix for Alert link URL for alerts-v2.weather.gov (Thanks Jasiu!)
 //  Version 5.15 - 25-Jun-2020 - updated diagnostic info to help diagnose Akamai cache issues from api.weather.gov site
-//  Version 5.16 - 08-Jul-2020 - added diagnostic logging capability ($doLogging = true; to enable)
+//  Version 5.16 - 08-Jul-2020 - added diagnostic logging capability ($doLogging = true; to enable);
+//  Version 5.17 - 15-Jul-2020 - switch to geo+json queries from ld+json queries for api.weather.gov; cache file name changes too.
 //
 
-$Version = 'advforecast2.php (JSON) - V5.16 - 08-Jul-2020';
+$Version = 'advforecast2.php (JSON) - V5.17 - 15-Jul-2020';
 
 //
 // import NOAA Forecast info
@@ -152,6 +152,8 @@ $NWSforecasts = array(
   "NEZ066|Lincoln, NE|https://forecast.weather.gov/MapClick.php?CityName=Lincoln&state=NE&site=OAX&textField1=40.8164&textField2=-96.6882&e=0&TextType=2",
 	"IAZ066|Clinton, IA|https://forecast-v3.weather.gov/point/41.839,-90.192",
 	'ALZ266|Gulf Shores, AL|https://forecast.weather.gov/MapClick.php?lat=30.2775&lon=-87.6831&unit=0&lg=english&FcstType=text&TextType=2',
+	'KSZ050|3 Miles SE Lyons KS|https://forecast.weather.gov/MapClick.php?lat=38.3134&lon=-98.1617&unit=0&lg=english&FcstType=text&TextType=2',
+	'ILZ029|Glasford IL|https://forecast.weather.gov/MapClick.php?lat=40.5723&lon=-89.8132&unit=0&lg=english&FcstType=text&TextType=2',
 
 );
 //*/
@@ -178,8 +180,12 @@ $ourTZ = 'America/Los_Angeles'; // default timezone (new V5.00)
 // $timeFormat = 'd-M-Y g:ia T';  // Fri, 31-Mar-2006 6:35pm TZone (new V5.00)
 $timeFormat = 'g:i a T M d, Y'; // 3:17 am PST Jan 28, 2017 (new V5.00, like old forecast timestamp display)
 
-$doLogging = true;       // =true to enable summary logging, =false for no summary log files
-$doLoggingDetail = true; // =true to eanable detail logging, =false for no detail files
+# V5.16 logging capability for curl accesses to api.weather.gov 
+$doLogging = true;       // =true to enable summary logging, =false for no summary log file
+# log saved to $cacheFileDir/advforecast2-log-YYYY-MM-DD.csv  (tab-delimited CSV file)
+#
+$doLoggingDetail = true; // =true to eanable detail logging, =false for no detail file
+# log saved to $cacheFileDir/advforecast2-log-YYYY-MM-DD.txt
 //
 // ----------------------END OF SETTINGS--------------------------------------
 // changing stuff below this may cause you issues when updates to the script are done.
@@ -188,10 +194,11 @@ $doLoggingDetail = true; // =true to eanable detail logging, =false for no detai
 $useProdNWS = false; // =false, use preview V3 sites, =true, use production sites (after June 24, 2019)
 //
 $forceDualIconURL = false; // for TESTING prior to 7-Jul-2015 when new icons were used by NWS
-// following is for FUTURE 
+
+// following is for possible FUTURE use
 $getGridpointData = false; // =true; for getting gridpoint data, =false for not getting the data
 //
-// following is for FUTURE hourly forecast/graphics..
+// following is for possible FUTURE hourly forecast/graphics use
 $getHourlyData = false; // =true; for getting hourly data, =false for not getting the data
 
 if(file_exists('Settings.php')) { include_once('Settings.php'); }
@@ -332,7 +339,7 @@ if ($Force > 1) {
   $forceBackup = true;
 }
 
-$cacheName = $cacheFileDir . "forecast-" . $NOAAZone . "-$haveZone-json.txt";
+$cacheName = $cacheFileDir . "forecast-" . $NOAAZone . "-$haveZone-geojson.txt";
 
 // dont change the $backupfileName!
 // new Zone URL with V5.00:
@@ -544,8 +551,8 @@ if (isset($matches[1])) {
 		$Status .= "<!-- headers from the $usingFile request\n".$headers."\n -->\n";
 	}
 }
-$FCSTJSON = json_decode($content, true); // parse the JSON into an associative array
-
+$rawJSON = json_decode($content, true); // parse the JSON into an associative array
+$FCSTJSON = $rawJSON['properties'];      // geoJSON format
 if (strlen($content > 10) and function_exists('json_last_error')) { // report status, php >= 5.3.0 only
   switch (json_last_error()) {
   case JSON_ERROR_NONE:
@@ -690,17 +697,7 @@ if (isset($FCSTJSON['periods'][0]['icon']) and
 		$ourPoint = $matches[1];
 	}
 
-	if(is_array($FCSTJSON['geometry']) and isset($FCSTJSON['geometry'][0])) {
-	  $forecastlatlong = $FCSTJSON['geometry'][0];
-		} else {
-		  if(!is_array($FCSTJSON['geometry'])) {
-				$forecastlatlong = $FCSTJSON['geometry'];
-			} else {
-
-		    $forecastlatlong = $ourPoint;
-			}
-	}
-	
+	$forecastlatlong = $ourPoint;
   $forecastcity = $NOAAlocation;
   $i = 0;
   foreach($rawForecasts as $ptr => $FCST) {
@@ -987,10 +984,11 @@ if (strlen($alertContents) > 1) { // got some alerts.. process
 
   // use the API alerts feed
 
-  if (is_array($ALERTJSON) and count($ALERTJSON) > 0 and isset($ALERTJSON['@graph'])) {
-    $Status.= "<!-- preparing " . count($ALERTJSON['@graph']) . " warning links -->\n";
+  if (is_array($ALERTJSON) and isset($ALERTJSON['features'][0])) {
+    $Status.= "<!-- preparing " . count($ALERTJSON['features']) . " warning links -->\n";
     $Status.= "<!-- now " . date($timeFormat) . " (" . gmdate($timeFormat) . ") -->\n";
-    foreach($ALERTJSON['@graph'] as $i => $ALERT) {
+    foreach($ALERTJSON['features'] as $i => $rawALERT) {
+			$ALERT = $rawALERT['properties'];  // geo+json format
       $expireUTC = strtotime($ALERT['expires']);
       $Status.= "<!-- alert expires " . date($timeFormat, $expireUTC) . " (" . $ALERT['expires'] . ") -->\n";
       if ( 
@@ -1313,7 +1311,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 //    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0');
     curl_setopt($ch, CURLOPT_HTTPHEADER, // request LD-JSON format
     array(
-      "Accept: application/ld+json",
+      "Accept: application/geo+json",
 			"Cache-control: no-cache",
 			"Pragma: akamai-x-cache-on, akamai-x-get-request-id"
     ));
@@ -1430,7 +1428,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 					"Cache-control: max-age=0\r\n" . 
 					"Connection: close\r\n" . 
 					"User-agent: Mozilla/5.0 (advforecast2.php - saratoga-weather.org)\r\n" . 
-					"Accept: application/ld+json\r\n"
+					"Accept: application/geo+json\r\n"
       ) ,
       'ssl' => array(
         'method' => "GET",
@@ -1440,7 +1438,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 					"Cache-control: max-age=0\r\n" . 
 					"Connection: close\r\n" . 
 					"User-agent: Mozilla/5.0 (advforecast2.php - saratoga-weather.org)\r\n" . 
-					"Accept: application/ld+json\r\n"
+					"Accept: application/geo+json\r\n"
       )
     );
     $STRcontext = stream_context_create($STRopts);
@@ -2295,7 +2293,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
   // use a new JSON cache file to store the meta information we need
   //
 
-  $metaCache = str_replace('-json.txt', '-json-meta.txt', $mainCache);
+  $metaCache = str_replace('-geojson.txt', '-geojson-meta.txt', $mainCache);
 
   // make the point-forecast URL into a metadata request URL
 
@@ -2351,20 +2349,21 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     $content = (string)array_pop($stuff); // last one is the content
     $headers = (string)array_pop($stuff); // next-to-last-one is the headers
 
-    $PJSON = json_decode($content, true); // parse the JSON into an associative array
+    $rawPJSON = json_decode($content, true); // parse the JSON into an associative array
+		$PJSON = $rawPJSON['properties'];        // geojson format
     if (json_last_error() == JSON_ERROR_NONE) { // got the point METADATA.. stuff it away
       if ($doDebug) {
-        $Status.= "<!-- point raw data\n" . print_r($PJSON, true) . " -->\n";
+        $Status.= "<!-- PJSON raw data\n" . var_export($PJSON, true) . " -->\n";
       }
 
-      if (isset($PJSON['relativeLocation']['city'])) {
-        $META['city'] = $PJSON['relativeLocation']['city'];
-        $META['state'] = $PJSON['relativeLocation']['state'];
-        $distance = $PJSON['relativeLocation']['distance']['value'];
+      if (isset($PJSON['relativeLocation']['properties']['city'])) {
+        $META['city'] = $PJSON['relativeLocation']['properties']['city'];
+        $META['state'] = $PJSON['relativeLocation']['properties']['state'];
+        $distance = $PJSON['relativeLocation']['properties']['distance']['value'];
         $distance = floor(0.000621371 * $distance); // truncate to nearest whole mile
         $Status.= "<!-- distance=$distance from " . $META['city'] . " -->\n";
         if ($distance >= 2) {
-          $angle = $PJSON['relativeLocation']['bearing']['value'];
+          $angle = $PJSON['relativeLocation']['properties']['bearing']['value'];
           $direction = $compass[round($angle / 22.5) % 16];
           $t = $distance . ' ';
           $t.= ($distance > 1) ? "Miles" : "Mile";
@@ -2403,7 +2402,8 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     $stuff = explode("\r\n\r\n",$rawhtml); // maybe we have more than one header due to redirects.
     $content = (string)array_pop($stuff); // last one is the content
     $headers = (string)array_pop($stuff); // next-to-last-one is the headers
-    $PJSON = json_decode($content, true); // parse the JSON into an associative array
+    $rawPJSON = json_decode($content, true); // parse the JSON into an associative array
+		$PJSON  = $rawPJSON['properties'];       // geojson format
     if (json_last_error() == JSON_ERROR_NONE) { // got the point METADATA.. stuff it away
       if ($doDebug) {
         $Status.= "<!-- zone raw data\n" . print_r($PJSON, true) . " -->\n";
@@ -2433,7 +2433,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     $PJSON = json_decode($content, true); // parse the JSON into an associative array
     if (json_last_error() == JSON_ERROR_NONE) { // got the point METADATA.. stuff it away
       if ($doDebug) {
-        $Status.= "<!-- WFO raw data\n" . print_r($PJSON, true) . " -->\n";
+        $Status.= "<!-- WFO raw data\n" . var_export($PJSON, true) . " -->\n";
       }
 
       if (isset($PJSON['name'])) {
@@ -2457,7 +2457,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
   }
 
   if ($doDebug) {
-    $Status.= "<!-- final META data\n" . print_r($META, true) . "\n saveNew=$saveNew -->\n";
+    $Status.= "<!-- final META data\n" . var_export($META, true) . "\n saveNew=$saveNew -->\n";
   }
 
   if ($saveNew) { // save the file if we changed anything
@@ -2473,7 +2473,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     }
   }
 
-  $Status.= "<!-- META\n" . print_r($META, true) . " -->\n";
+  $Status.= "<!-- META\n" . var_export($META, true) . " -->\n";
   return $META;
 }
 
@@ -2490,7 +2490,7 @@ function get_gridpoint_data($mainCache, $gridpointURL, $forceFlag, $refreshTime)
   // get and cache the gridpoint information
   //
 
-  $gpCache = str_replace('-json.txt', '-json-gridpoint.txt', $mainCache);
+  $gpCache = str_replace('-geojson.txt', '-geojson-gridpoint.txt', $mainCache);
   $gpURL = str_replace('http://', 'https://', $gridpointURL);
   $Status.= "<!-- gridpoint data cache= '$gpCache' from '$gpURL' -->\n";
   if ($forceFlag > 0 or !file_exists($gpCache) or (file_exists($gpCache) and filemtime($gpCache) + $refreshTime < time())) {
@@ -2534,7 +2534,7 @@ function get_hourly_data($mainCache, $gridpointURL, $forceFlag, $refreshTime)
   // get and cache the gridpoint information
   //
 
-  $gpCache = str_replace('-json.txt', '-json-hourly.txt', $mainCache);
+  $gpCache = str_replace('-geojson.txt', '-geojson-hourly.txt', $mainCache);
   $gpURL = str_replace('http://', 'https://', $gridpointURL);
   $Status.= "<!-- hourly data cache= '$gpCache' from '$gpURL' -->\n";
   if ($forceFlag > 0 or !file_exists($gpCache) or (file_exists($gpCache) and filemtime($gpCache) + $refreshTime < time())) {
