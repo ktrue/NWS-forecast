@@ -60,9 +60,10 @@
 //  Version 5.13 - 08-Sep-2019 - fix for link URL with NWS discontinuation of forecast-v3.weather.gov site
 //  Version 5.14 - 10-May-2020 - fix for Alert link URL for alerts-v2.weather.gov (Thanks Jasiu!)
 //  Version 5.15 - 25-Jun-2020 - updated diagnostic info to help diagnose Akamai cache issues from api.weather.gov site
+//  Version 5.16 - 08-Jul-2020 - added diagnostic logging capability ($doLogging = true; to enable)
 //
 
-$Version = 'advforecast2.php (JSON) - V5.15 - 25-Jun-2020';
+$Version = 'advforecast2.php (JSON) - V5.16 - 08-Jul-2020';
 
 //
 // import NOAA Forecast info
@@ -129,10 +130,10 @@ $NWSforecasts = array(
   'COZ010|Vail, CO|http://forecast.weather.gov/MapClick.php?lat=39.5864&lon=-106.3822&unit=0&lg=english&FcstType=text&TextType=2',
   'CAZ072|South Lake Tahoe, CA|http://forecast.weather.gov/MapClick.php?CityName=Tahoe Vista&state=CA&site=MTR&textField1=39.2425194&textField2=-120.0604858&e=1&TextType=2',
   'WAZ037|Colville, WA|http://forecast.weather.gov/MapClick.php?lat=48.5433&lon=-117.8951&unit=0&lg=english&FcstType=text&TextType=2',
-  'ILZ014|Hoffman Estates, IL|http://forecast.weather.gov/MapClick.php?lat=42.03921&lon=-88.11001&unit=0&lg=english&FcstType=text&TextType=2',
+  'ILZ103|Hoffman Estates, IL|http://forecast.weather.gov/MapClick.php?lat=42.03921&lon=-88.11001&unit=0&lg=english&FcstType=text&TextType=2',
   'NDZ027|Grand Forks,  ND|http://forecast.weather.gov/MapClick.php?lat=47.9169&lon=-97.072&unit=0&lg=english&FcstType=text&TextType=2',
   'MTZ055|Bozeman, MT|http://forecast.weather.gov/MapClick.php?lat=45.6354&lon=-111.0633&unit=0&lg=english&FcstType=text&TextType=2',
-  "AZZ023|Phoenix|http://forecast.weather.gov/MapClick.php?CityName=Phoenix&state=AZ&site=PSR&textField1=33.646&textField2=-112.007&e=0&TextType=2",
+  "AZZ544|Phoenix|http://forecast.weather.gov/MapClick.php?CityName=Phoenix&state=AZ&site=PSR&textField1=33.646&textField2=-112.007&e=0&TextType=2",
   'KSZ078|Dodge City, KS|http://forecast.weather.gov/MapClick.php?lat=37.7528&lon=-100.0171&unit=0&lg=english&FcstType=text&TextType=2',
   'OKZ020|Stillwater, OK|http://forecast.weather.gov/MapClick.php?lat=36.1156&lon=-97.0584&unit=0&lg=english&FcstType=text&TextType=2',
   'GAZ034|Lawrenceville, GA|http://forecast.weather.gov/MapClick.php?CityName=Lawrenceville&state=GA&site=FFC&lat=33.9495&lon=-83.9922&TextType=2',
@@ -150,6 +151,8 @@ $NWSforecasts = array(
 	"MSZ066|Ellisville, MS|https://forecast.weather.gov/MapClick.php?lat=31.62265&lon=-89.23384&unit=0&lg=english&FcstType=text&TextType=2",
   "NEZ066|Lincoln, NE|https://forecast.weather.gov/MapClick.php?CityName=Lincoln&state=NE&site=OAX&textField1=40.8164&textField2=-96.6882&e=0&TextType=2",
 	"IAZ066|Clinton, IA|https://forecast-v3.weather.gov/point/41.839,-90.192",
+	'ALZ266|Gulf Shores, AL|https://forecast.weather.gov/MapClick.php?lat=30.2775&lon=-87.6831&unit=0&lg=english&FcstType=text&TextType=2',
+
 );
 //*/
 //*
@@ -174,6 +177,9 @@ $refreshTime = 600; // default refresh of cache 600=10 minutes
 $ourTZ = 'America/Los_Angeles'; // default timezone (new V5.00)
 // $timeFormat = 'd-M-Y g:ia T';  // Fri, 31-Mar-2006 6:35pm TZone (new V5.00)
 $timeFormat = 'g:i a T M d, Y'; // 3:17 am PST Jan 28, 2017 (new V5.00, like old forecast timestamp display)
+
+$doLogging = true;       // =true to enable summary logging, =false for no summary log files
+$doLoggingDetail = true; // =true to eanable detail logging, =false for no detail files
 //
 // ----------------------END OF SETTINGS--------------------------------------
 // changing stuff below this may cause you issues when updates to the script are done.
@@ -203,14 +209,11 @@ if (isset($SITE['tz']))              {$ourTZ = $SITE['tz'];} // V5.00
 if (isset($SITE['timeFormat']))      {$timeFormat = $SITE['timeFormat'];} // V5.00
 if (isset($SITE['showTwoIconRows'])) {$showTwoIconRows = $SITE['showTwoIconRows'];} // V5.00
 if (isset($SITE['showZoneWarning'])) {$showZoneWarning = $SITE['showZoneWarning'];} // V5.00
+if (isset($SITE['advLogging']))      {$doLogging = $SITE['advLogging'];} // V5.16
+if (isset($SITE['advLoggingDetail'])) {$doLoggingDetail = $SITE['advLoggingDetail'];} // V5.16
 // end of overrides from Settings.php
 
 $doDebug = (isset($_REQUEST['debug']) and preg_match('|y|i',$_REQUEST['debug']))?true:false;
-
-if(isset($_REQUEST['rows'])) {
-	if($_REQUEST['rows'] == '1') {$showTwoIconRows = false; }
-	if($_REQUEST['rows'] == '2') {$showTwoIconRows = true;  }
-}
 
 if (isset($_REQUEST['rows'])) {
   if ($_REQUEST['rows'] == '1') {
@@ -402,6 +405,10 @@ if (isset($META['forecastZone']) and $META['forecastZone'] !== $NOAAZone) {
 $pointURL = $META['forecastURL'];
 $fileName = $META['forecastURL'];
 $backupfileName = APIURL . "/zones/forecast/".$META['forecastZone']."/forecast";
+if($fileName == '') {
+	$Status .= "<!-- pointURL is null. Using Zone URL instead -->\n";
+	$fileName = $backupfileName;
+}
 $Status .= "<!-- point forecastURL = '$pointURL' -->\n";
 $Status .= "<!-- zone  forecastURL = '$backupfileName' -->\n";
 
@@ -419,7 +426,7 @@ if ($Force == 1 or
   preg_match('/HTTP\/\S+ (\d+)/', $headers, $m);
 	//$Status .= "<!-- m=".print_r($m,true)." -->\n";
 	//$Status .= "<!-- html=".print_r($html,true)." -->\n";
-	$lastRC = (string)$m[1];
+	if(isset($m[1])) {$lastRC = (string)$m[1]; } else {$lastRC = '0'; }
   if ($lastRC >= '400') {
     $Force = 2;
     $Status.= "<!-- Oops.. point forecast unavailable RC=" . $lastRC . " - using Zone instead -->\n";
@@ -453,7 +460,7 @@ if ($Force == 2) {
   preg_match('/HTTP\/\S+ (\d+)/', $headers, $m);
 	//$Status .= "<!-- m=".print_r($m,true)." -->\n";
 	//$Status .= "<!-- html=".print_r($html,true)." -->\n";
-	$lastRC = (string)$m[1];
+	if(isset($m[1])) {$lastRC = (string)$m[1];} else {$lastRC = '0';}
   if (strpos($html, '{') !== false and $lastRC == '200') { // got a file.. save it
     $fp = fopen($cacheName, "w");
     if ($fp) {
@@ -467,7 +474,7 @@ if ($Force == 2) {
   }
 }
 
-if (strlen($html) < 50) { // haven't loaded it by fetch.. load from cache
+if (strlen($html) < 50 and file_exists($cacheName)) { // haven't loaded it by fetch.. load from cache
   $html = file_get_contents($cacheName);
   $fSize = strlen($html);
   $Status.= "<!-- loaded cache file $cacheName - $fSize bytes -->\n";
@@ -498,6 +505,7 @@ if ($Force != 2) {
       $Status.= "<!-- point forecast more than 18hrs old (age h:m:s is $agehms) updated:'$ts' .. use Zone forecast instead -->\n";
 			list($headers,$content) = explode("\r\n\r\n",$html);
 			$Status .= "<!-- headers from the gridpoint request\n".$headers."\n -->\n";
+			ADV_log('Stale',"Forecast Stale Age=$agehms from gridpoint - use Zone forecast instead\n".$curlStatus."\n".$headers,"\n");
       $Force = 2;
       $usingFile = "(Zone forecast)";
       $html = ADV_fetchUrlWithoutHanging($backupfileName);
@@ -1094,7 +1102,7 @@ if ($PrintMode) {
     <tr>
       <td style="text-align: center">Updated: <?php
   echo $forecastupdated; ?>
-          </td>
+          </td><!--end forecastupdated-->
     </tr>
     <?php
   echo $ddMenu ?>
@@ -1282,9 +1290,10 @@ function ADV_fetchUrlWithoutHanging($inurl)
 
   // get contents from one URL and return as string
 
-  global $Status, $needCookie,$doDebug /*, $URLcache */;
+  global $Status, $needCookie,$doDebug,$doLogging,$curlStatus,$Version /*, $URLcache */;
   $useFopen = false;
   $overall_start = time();
+	$curlStatus = '';
   if (!$useFopen) {
 
     // Set maximum number of seconds (can have floating-point) to wait for feed before displaying page without feed
@@ -1296,7 +1305,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
     $data = '';
     $domain = parse_url($url, PHP_URL_HOST);
     $theURL = str_replace('nocache', '?' . $overall_start, $url); // add cache-buster to URL if needed
-    $Status.= "<!-- curl fetching '$theURL' -->\n";
+    $curlStatus.= "<!-- curl fetching '$theURL' -->\n";
     $ch = curl_init(); // initialize a cURL session
     curl_setopt($ch, CURLOPT_URL, $theURL); // connect to provided URL
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0); // don't verify peer certificate
@@ -1325,7 +1334,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 
     $data = curl_exec($ch); // execute session
     if (curl_error($ch) <> '') { // IF there is an error
-      $Status.= "<!-- curl Error: " . curl_error($ch) . " -->\n"; //  display error notice
+      $curlStatus.= "<!-- curl Error: " . curl_error($ch) . " -->\n"; //  display error notice
     }
 
     $cinfo = curl_getinfo($ch); // get info on curl exec.
@@ -1366,46 +1375,47 @@ function ADV_fetchUrlWithoutHanging($inurl)
 		if($url !== $cinfo['url'] and $cinfo['http_code'] == 200 and
 		   strpos($url,'/points/') > 0 and strpos($cinfo['url'],'/gridpoints/') > 0) {
 			# only cache point forecast->gridpoint forecast successful redirects
-			$Status .= "<!-- note: fetched '".$cinfo['url']."' after redirect was followed. -->\n";
+			$curlStatus .= "<!-- note: fetched '".$cinfo['url']."' after redirect was followed. -->\n";
 			//$URLcache[$inurl] = $cinfo['url'];
-			//$Status .= "<!-- $inurl added to URLcache -->\n";
+			//$curlStatus .= "<!-- $inurl added to URLcache -->\n";
 		}
 
-    $Status.= "<!-- HTTP stats: " . " RC=" . $cinfo['http_code'];
+    $curlStatus.= "<!-- HTTP stats: " . " RC=" . $cinfo['http_code'];
 		if (isset($cinfo['primary_ip'])) {
-			$Status .= " dest=" . $cinfo['primary_ip'];
+			$curlStatus .= " dest=" . $cinfo['primary_ip'];
 		}
     if (isset($cinfo['primary_port'])) {
-      $Status .= " port=" . $cinfo['primary_port'];
+      $curlStatus .= " port=" . $cinfo['primary_port'];
     }
 
     if (isset($cinfo['local_ip'])) {
-      $Status.= " (from sce=" . $cinfo['local_ip'] . ")";
+      $curlStatus.= " (from sce=" . $cinfo['local_ip'] . ")";
     }
 
-    $Status.= "\n      Times:" . 
+    $curlStatus.= "\n      Times:" . 
 		" dns=" . sprintf("%01.3f", round($cinfo['namelookup_time'], 3)) . 
 		" conn=" . sprintf("%01.3f", round($cinfo['connect_time'], 3)) . 
 		" pxfer=" . sprintf("%01.3f", round($cinfo['pretransfer_time'], 3));
     if ($cinfo['total_time'] - $cinfo['pretransfer_time'] > 0.0000) {
-      $Status.= " get=" . sprintf("%01.3f", round($cinfo['total_time'] - $cinfo['pretransfer_time'], 3));
+      $curlStatus.= " get=" . sprintf("%01.3f", round($cinfo['total_time'] - $cinfo['pretransfer_time'], 3));
     }
 
-    $Status.= " total=" . sprintf("%01.3f", round($cinfo['total_time'], 3)) . " secs -->\n";
+    $curlStatus.= " total=" . sprintf("%01.3f", round($cinfo['total_time'], 3)) . " secs -->\n";
 
-    // $Status .= "<!-- curl info\n".print_r($cinfo,true)." -->\n";
+    // $curlStatus .= "<!-- curl info\n".print_r($cinfo,true)." -->\n";
 
     curl_close($ch); // close the cURL session
 
-    // $Status .= "<!-- raw data\n".$data."\n -->\n";
+    // $curlStatus .= "<!-- raw data\n".$data."\n -->\n";
     $stuff = explode("\r\n\r\n",$data); // maybe we have more than one header due to redirects.
     $content = (string)array_pop($stuff); // last one is the content
     $headers = (string)array_pop($stuff); // next-to-last-one is the headers
 
-    if ($doDebug or $cinfo['http_code'] <> '200') {
-      $Status.= "<!-- headers returned:\n" . $headers . "\n -->\n";
+    if ($cinfo['http_code'] <> '200') {
+      $curlStatus.= "<!-- headers returned:\n" . $headers . "\n -->\n";
+			if($doLogging) {ADV_log('Fetch fail',$curlStatus); }
     }
-
+    $Status .= $curlStatus;
     return $data; // return headers+contents
   }
   else {
@@ -1441,17 +1451,17 @@ function ADV_fetchUrlWithoutHanging($inurl)
     $theaders = join("\r\n", $headerarray);
     $xml = $theaders . "\r\n\r\n" . $xml;
     $ms_total = sprintf("%01.3f", round($T_close - $T_start, 3));
-    $Status.= "<!-- file_get_contents() stats: total=$ms_total secs -->\n";
-    $Status.= "<-- get_headers returns\n" . $theaders . "\n -->\n";
+    $curlStatus.= "<!-- file_get_contents() stats: total=$ms_total secs -->\n";
+    $curlStatus.= "<-- get_headers returns\n" . $theaders . "\n -->\n";
 
     //   print " file() stats: total=$ms_total secs.\n";
 
     $overall_end = time();
     $overall_elapsed = $overall_end - $overall_start;
-    $Status.= "<!-- fetch function elapsed= $overall_elapsed secs. -->\n";
+    $curlStatus.= "<!-- fetch function elapsed= $overall_elapsed secs. -->\n";
 
     //   print "fetch function elapsed= $overall_elapsed secs.\n";
-
+    $Status .= $curlStatus;
     return ($xml);
   }
 } // end ADV_fetchUrlWithoutHanging
@@ -1462,6 +1472,86 @@ function ADV_fetch_microtime()
 {
   list($usec, $sec) = explode(" ", microtime());
   return ((float)$usec + (float)$sec);
+}
+
+// ------------------------------------------------------------------
+
+function ADV_log($msg,$details)
+{
+	global $doLogging,$doLoggingDetail,$Version,$cacheFileDir,$Status,$META;
+	if(!$doLogging and !$doLoggingDetail) {return; }
+	$text = "---------------------------------------------\n";
+	$text .= gmdate('c').' (local: '.date('r').") - $Version\n";
+	$text .= "$msg\n";
+	$text .= "$details\n";
+	
+	$fname = $cacheFileDir.'advforecast2-log-'.date('Y-m-d').'.txt';
+	if(isset($doLoggingDetail) and $doLoggingDetail) {
+	  file_put_contents($fname,$text,FILE_APPEND);
+	  $Status .= "<!-- logged '$msg' to '$fname' -->\n";
+	}
+	
+	if(!$doLogging) { return; }
+/*
+<!-- curl fetching 'https://api.weather.gov/gridpoints/OTX/132,134/forecast' -->
+<!-- HTTP stats:  RC=500 dest=184.27.36.18 port=443 (from sce=192.168.1.104)
+      Times: dns=0.002 conn=0.015 pxfer=0.060 get=1.182 total=1.242 secs -->
+<!-- headers returned:
+HTTP/2 500 
+server: nginx/1.16.1
+content-type: application/problem+json
+access-control-allow-origin: *
+access-control-allow-headers: Feature-Flags
+x-request-id: a81c0162-6bc5-414e-aaa3-948837fd9487
+x-correlation-id: a81c0162-6bc5-414e-aaa3-948837fd9487
+x-server-id: vm-bldr-nids-apiapp2.ncep.noaa.gov
+pragma: no-cache
+content-length: 325
+cache-control: private, must-revalidate, max-age=883
+expires: Wed, 08 Jul 2020 19:09:06 GMT
+date: Wed, 08 Jul 2020 18:54:23 GMT
+vary: Accept,Feature-Flags,Accept-Language
+strict-transport-security: max-age=31536000 ; includeSubDomains ; preload
+ -->
+ */
+	preg_match('!curl fetching \'(\S+)\' !Uis',$details,$m);
+	if(isset($m[1])) {$url = trim($m[1]);} else {$url = '';}
+	preg_match('!RC=(\S+) dest=(\S+) .*from sce=(\S+)\)!Uis',$details,$m);
+	if(isset($m[2])) {
+		$RC = $m[1];
+		$IP = $m[2];
+		$SIP = $m[3];
+	} else {
+		$RC = '';
+		$IP = '';
+		$SIP = '';
+	}
+	
+	if(preg_match('!Stale Age=(\S+) !Uis',$details,$m)) {
+		$RC = 'stale ' . trim($m[1]);
+		if($url == '' and isset($META['forecastURL'])) {$url = $META['forecastURL']; }
+	}
+	if($RC == '0' and preg_match('!timed out after (\S+) !Uis',$details,$m)) {
+		$RC = 'timeout ' . trim($m[1]).'ms';
+	}
+	preg_match('!x-server-id: (.+)\n!Uis',$details,$m);
+	if(isset($m[1])) { $svrid = trim($m[1]); } else {$svrid= '';}
+	preg_match('!x-request-id: (.+)\n!Uis',$details,$m);
+	if(isset($m[1])) { $reqid = trim($m[1]); } else {$reqid= '';}
+	preg_match('!x-cache: (.+)\n!Uis',$details,$m);
+	if(isset($m[1])) { $cache = trim($m[1]); } else {$cache= '';}
+	preg_match('!date: (.+)\n!Uis',$details,$m);
+	if(isset($m[1])) { $cdate = trim($m[1]); } else {$cdate= '';}
+	preg_match('!expires: (.+)\n!Uis',$details,$m);
+	if(isset($m[1])) { $edate = trim($m[1]); } else {$edate= '';}
+  
+	$text = join("\t",array(date('c'),$url,$RC,$IP,$svrid,$reqid,$cache,$cdate,$edate,$SIP))."\n";
+	$fname = $cacheFileDir.'advforecast2-log-'.date('Y-m-d').'.csv';
+	if(!file_exists($fname)) {
+		$text = join("\t",array('Date','URL','RC','IP','SRV-ID','REQ-ID','X-Cache','Hdr-Date','Expires','FromIP'))."\n".$text;
+	}
+  file_put_contents($fname,$text,FILE_APPEND);
+	return;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -2218,7 +2308,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
   // make the zone forecast URL into a metadata request URL
 
   $metaZoneURL = $zoneURL;
-  $metaZoneURL = preg_replace('!/forecast$!', '', $metaZoneURL);
+  $metaZoneURL = preg_replace('!/forecast$!is', '', $metaZoneURL);
   //$metaZoneURL = str_replace('JSON-LD', 'forecast', $metaZoneURL);
   $ourZone = '';
   if (preg_match('|/([^/]+)/forecast|i', $zoneURL, $matches)) {
@@ -2230,11 +2320,16 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
   $META = array();
 
   // First.. see if we've already cached this meta info.. it won't change once discovered for a point
+	if(file_exists($metaCache)) {
+		$age = time() - filemtime($metaCache);
+    $Status.= "<!-- meta cache $metaCache age=".sec2hmsADV($age)." h:m:s -->\n";
+	}
 
-  if (file_exists($metaCache)) {
+  if (file_exists($metaCache) and filemtime($metaCache) + 24*60*60 > time() ) {
     $recs = file_get_contents($metaCache);
+		$age = time() - filemtime($metaCache);
     $META = json_decode($recs, true);
-    $Status.= "<!-- loaded meta info from $metaCache -->\n";
+    $Status.= "<!-- loaded meta info from $metaCache age=".sec2hmsADV($age)." h:m:s -->\n";
     if (isset($META['point']) and $META['point'] !== $ourPoint) {
 
       // oops... changed the lat/long for the point .. reload the meta data
@@ -2245,7 +2340,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     }
   }
   else { // JSON ERROR
-    $Status.= "<!-- Meta cache file not found .. reloading data from NWS site -->\n";
+    $Status.= "<!-- Meta cache file not found or more than 24hrs old .. reloading meta data from NWS site -->\n";
   }
 
   $saveNew = false;
@@ -2422,7 +2517,7 @@ function get_gridpoint_data($mainCache, $gridpointURL, $forceFlag, $refreshTime)
   }
   else {
     $gpAge = time() - filemtime($gpCache);
-    $Status.= "<!-- gridpoint data cache is current ($gpAge secs old). -->\n";
+    $Status.= "<!-- gridpoint data cache is current (".sec2hmsADV($gpAge)." h:m:s old). -->\n";
   } // end reload gridpoint data
 } // end get_gridpoint_data
 
