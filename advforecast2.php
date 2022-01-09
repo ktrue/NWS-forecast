@@ -585,7 +585,7 @@ if (strlen($content > 10) and function_exists('json_last_error')) { // report st
   }
 
   $Status.= "<!-- JSON decode $JSONerror -->\n";
-  if (jason_last_error() !== JSON_ERROR_NONE) {
+  if (json_last_error() !== JSON_ERROR_NONE) {
     $Status.= "<!-- content='" . print_r($content, true) . "' -->\n";
   }
 }
