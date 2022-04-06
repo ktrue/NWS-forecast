@@ -6,7 +6,7 @@ Tom's [advforecast.php](http://www.carterlake.org/advforecast.php.txt) script ta
 
 The script supports the ?force=1 parameter to reload the cache file, and also a ?force=2 to load the cache file from the backup County Zone forecast.
 
-To use, you'll need an [icon set](https://saratoga-weather.org/saratoga-icons2.zip) uploaded in the /forecast/images directory on your website, and to set the $fileName variable inside the script to the URL for the point-printable forecast.
+To use, you'll need an [icon set](https://saratoga-weather.org/saratoga-icons2.zip) uploaded in the /forecast directory on your website, and to set the $fileName variable inside the script to the URL for the point-printable forecast.  The icon set includes two subfolders ./forecast/images for static images and ./forecast/icon-templates static images for use with the DualImage.php script (included) to generate 6-hour forecast icons (V5.x only).
 
 With V2.06 and up, the new parsing of the failover Zone forecast requires additional icons (available below) to be placed on your website.
 
