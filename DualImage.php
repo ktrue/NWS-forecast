@@ -16,6 +16,8 @@
 # Version 1.00 - 06-Jul-2015 - initial release
 # Version 1.01 - 06-Mar-2017 - changes for NWS website icon usage
 # Version 1.02 - 26-May-2018 - changes for NWS website icon usage (Tropical Storm/Hurricane)
+# Version 1.03 - 29-Mar-2022 - fix PHP 8.1 Deprecated errata
+# Version 1.04 - 06-Apr-2022 - fix more PHP 8.1 Deprecated errata
 #
 #----------------------------------------------------------------------------------------
 # Settings:
@@ -202,6 +204,7 @@ if($rightDoPoP == 'Y' and isset($_GET['jp']) and preg_match('!^([0-9]{1,3})$!',$
 	if($rightPoP < 10)  {$rightPoP = 0;  }
 } else {
 	$rightPoP = 0;
+
 }
 
 $doSaveImage = (isset($_GET['save']) and $_GET['save'] == 'yes')?true:false;
@@ -477,29 +480,28 @@ function copy_image($img,$side,$sceimg,$from) {
   if(preg_match('!^\d+$!',$from)) { # source 1/2 image at starting X offset
 	  $frX =$from;
 	  $frY = $imgY;
-	  $frW = $imgX/2;
+	  $frW = (integer)$imgX/2;
   } elseif($from == 'L') { # source from left half of image
 	  $frX =0;
 	  $frY = $imgY;
-	  $frW = $imgX/2;
+	  $frW = (integer)$imgX/2;
 	  
   } elseif ($from == 'R') { # source from right half of image
-	  $frX = $imgX/2;
+	  $frX = (integer)$imgX/2;
 	  $frY = $imgY;
-	  $frW = $imgX/2;
+	  $frW = (integer)$imgX/2;
   } else { # source from middle of image
-      $frX = $imgX/4;
+    $frX = (integer)$imgX/4;
 	  $frY = $imgY;
-	  $frW = $imgX/2;
+	  $frW = (integer)$imgX/2;
   }
  
   if($side == 'L') { # draw to left-side
-	imagecopy($img,$sceimg,0,0,$frX,0,$frW,$imgY); 
+	imagecopy($img,$sceimg,0,0,(int)$frX,0,(int)$frW,$imgY); 
   
   } elseif($side == 'R') { # draw to right-side
-	imagecopy($img,$sceimg,$imgX/2,0,$frX,0,$frW,$imgY); 
+	imagecopy($img,$sceimg,(int)$imgX/2,0,(int)$frX,0,(int)$frW,$imgY); 
   }
 	
 } # end copy_image()
 #----------------------------------------------------------------------------------------
-?>
