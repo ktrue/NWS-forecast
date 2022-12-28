@@ -61,9 +61,12 @@
 //  Version 5.15 - 25-Jun-2020 - updated diagnostic info to help diagnose Akamai cache issues from api.weather.gov site
 //  Version 5.16 - 08-Jul-2020 - added diagnostic logging capability ($doLogging = true; to enable);
 //  Version 5.17 - 15-Jul-2020 - switch to geo+json queries from ld+json queries for api.weather.gov; cache file name changes too.
+//  Version 5.18 - 18-Jan-2022 - added fix for PHP8.1 Deprecated errata
+//  Version 5.18a - 07-Feb-2022 - use 'updateTime' instead of deprecated 'updated' for age of gridpoint forecast
+//  Version 5.19 - 27-Dec-2022 - fixes for PHP 8.2
 //
 
-$Version = 'advforecast2.php (JSON) - V5.17 - 15-Jul-2020';
+$Version = 'advforecast2.php (JSON) - V5.19 - 27-Dec-2022';
 
 //
 // import NOAA Forecast info
@@ -503,7 +506,7 @@ if ($Force != 2) {
 
   // check point-forecast age and load zone forecast if too old
 
-  preg_match('!"updated":\s*"([^"]+)"!is', $html, $matches);
+  preg_match('!"updateTime":\s*"([^"]+)"!is', $html, $matches);
   if (isset($matches[1])) {
     $age = time() - strtotime($matches[1]);
 		$ts = $matches[1];
@@ -540,7 +543,10 @@ $stuff = explode("\r\n\r\n",$html); // maybe we have more than one header due to
 $content = (string)array_pop($stuff); // last one is the content
 $headers = (string)array_pop($stuff); // next-to-last-one is the headers
 // check age of forecast
-preg_match('!"updated":\s*"([^"]+)"!is', $html, $matches);
+preg_match('!"updateTime":\s*"([^"]+)"!is', $html, $matches);
+if(!isset($matches[1])) {
+  preg_match('!"updated":\s*"([^"]+)"!is', $html, $matches);
+}
 if (isset($matches[1])) {
 	$age = time() - strtotime($matches[1]);
 	$ts = $matches[1];
@@ -686,7 +692,7 @@ if (isset($FCSTJSON['periods'][0]['icon']) and
   [detailedForecast] => Partly cloudy, with a low around 45. Northwest wind 6 to 15 mph, with gusts as high as 20 mph.
   )
   */
-  $rawUpdated = $FCSTJSON['updated'];
+  $rawUpdated = $FCSTJSON['updateTime'];
   if (isset($META['timeZone'])) {
     date_default_timezone_set($META['timeZone']);
   }
@@ -2173,8 +2179,8 @@ function convert_to_local_icon($icon)
 
   // convert new API icon names to old image names
 
-  if (isset($NWSICONLIST["${daynight}${icon1}"])) {
-    list($nicon1, $rest) = explode('|', $NWSICONLIST["${daynight}${icon1}"]);
+  if (isset($NWSICONLIST["{$daynight}{$icon1}"])) {
+    list($nicon1, $rest) = explode('|', $NWSICONLIST["{$daynight}{$icon1}"]);
     $icon1 = $nicon1;
   }
   else {
@@ -2183,8 +2189,8 @@ function convert_to_local_icon($icon)
   }
 
   if ($icon2 <> '') {
-    if (isset($NWSICONLIST["${daynight}${icon2}"])) {
-      list($nicon2, $rest) = explode('|', $NWSICONLIST["${daynight}${icon2}"]);
+    if (isset($NWSICONLIST["{$daynight}{$icon2}"])) {
+      list($nicon2, $rest) = explode('|', $NWSICONLIST["{$daynight}{$icon2}"]);
       $icon2 = $nicon2;
     }
     else {
@@ -2209,23 +2215,23 @@ function convert_to_local_icon($icon)
 
     $Status.= "<!-- dual image '$newicon' used-->\n";
   }
-  elseif (file_exists("${iconDir}${icon1}${pop1}${iconType}")) { // use the image as-is
-    $newicon = "${iconDir}${icon1}${pop1}${iconType}";
+  elseif (file_exists("{$iconDir}{$icon1}{$pop1}{$iconType}")) { // use the image as-is
+    $newicon = "{$iconDir}{$icon1}{$pop1}{$iconType}";
     /*  } elseif ( $DualImageAvailable ) { // oops... pop icon doesn't exist but we can generate it
     $newicon = "DualImage.php?";
     $newicon .= "i=$icon1";
     if($pop1 <> '') { $newicon .= "&ip=$pop1"; }
 
-    $Status .= "<!-- missing icon '${iconDir}${icon1}${pop1}${iconType}' .. using '$newicon' instead -->\n";
+    $Status .= "<!-- missing icon '{$iconDir}{$icon1}{$pop1}{$iconType}' .. using '$newicon' instead -->\n";
     */
   }
-  elseif (file_exists("${iconDir}${icon1}${iconType}")) { // oops... pop icon doesn't exist
-    $newicon = "${iconDir}${icon1}${iconType}";
-    $Status.= "<!-- missing icon '${iconDir}${icon1}${pop1}${iconType}' .. " . "using '${iconDir}${icon1}${iconType}' instead -->\n";
+  elseif (file_exists("{$iconDir}{$icon1}{$iconType}")) { // oops... pop icon doesn't exist
+    $newicon = "{$iconDir}{$icon1}{$iconType}";
+    $Status.= "<!-- missing icon '{$iconDir}{$icon1}{$pop1}{$iconType}' .. " . "using '{$iconDir}{$icon1}{$iconType}' instead -->\n";
   }
   else {
-    $newicon = "${iconDir}na${iconType}";
-    $Status.= "<!-- missing icon '${iconDir}${icon1}${pop1}${iconType}' .. " . "using '${iconDir}na${iconType}' instead -->\n";
+    $newicon = "{$iconDir}na{$iconType}";
+    $Status.= "<!-- missing icon '{$iconDir}{$icon1}{$pop1}{$iconType}' .. " . "using '{$iconDir}na{$iconType}' instead -->\n";
   }
 
   return ($newicon);
@@ -2711,7 +2717,7 @@ function sec2hmsADV($sec, $padHours = false)
   // minutes past the hour: to get that, we need to
   // divide by 60 again and keep the remainder
 
-  $minutes = intval(($sec / 60) % 60);
+  $minutes = intval(fmod($sec / 60, 60));
 
   // then add to $hms (with a leading 0 if needed)
 
@@ -2720,7 +2726,7 @@ function sec2hmsADV($sec, $padHours = false)
   // seconds are simple - just divide the total
   // seconds by 60 and keep the remainder
 
-  $seconds = intval($sec % 60);
+  $seconds = intval(fmod($sec , 60));
 
   // add to $hms, again with a leading 0 if needed
 
