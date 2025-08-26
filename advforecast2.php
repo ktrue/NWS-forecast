@@ -64,9 +64,11 @@
 //  Version 5.18 - 18-Jan-2022 - added fix for PHP8.1 Deprecated errata
 //  Version 5.18a - 07-Feb-2022 - use 'updateTime' instead of deprecated 'updated' for age of gridpoint forecast
 //  Version 5.19 - 27-Dec-2022 - fixes for PHP 8.2
+//  Version 5.20 - 24-Jun-2024 - fixes for alert link to display alerts using forecast.weather.gov/showsigwx.php
+//  Version 5.21 - 26-Aug-2025 - adjust display for holiday legends
 //
 
-$Version = 'advforecast2.php (JSON) - V5.19 - 27-Dec-2022';
+$Version = 'advforecast2.php (JSON) - V5.21 - 26-Aug-2025';
 
 //
 // import NOAA Forecast info
@@ -114,7 +116,7 @@ $Version = 'advforecast2.php (JSON) - V5.19 - 27-Dec-2022';
 // V3.00 -- this following array can be used for multiple forecasts in *standalone* mode
 //  for Saratpga template use, add a $SITE['NWSforecasts'] entry in Settings.php to have these entries.
 //  To activate the definitions below, replace the /* with //* to uncomment the array definition
-/*
+//*
 $NWSforecasts = array(
   // the entries below are for testing use.. replace them with your own entries if using the script
   // outside the AJAX/PHP templates.
@@ -157,6 +159,7 @@ $NWSforecasts = array(
 	'ALZ266|Gulf Shores, AL|https://forecast.weather.gov/MapClick.php?lat=30.2775&lon=-87.6831&unit=0&lg=english&FcstType=text&TextType=2',
 	'KSZ050|3 Miles SE Lyons KS|https://forecast.weather.gov/MapClick.php?lat=38.3134&lon=-98.1617&unit=0&lg=english&FcstType=text&TextType=2',
 	'ILZ029|Glasford IL|https://forecast.weather.gov/MapClick.php?lat=40.5723&lon=-89.8132&unit=0&lg=english&FcstType=text&TextType=2',
+  'CAZ072|South Lake Tahoe|https://forecast.weather.gov/MapClick.php?lat=38.932&lon=-119.997&unit=0&lg=english&FcstType=text&TextType=2',
 
 );
 //*/
@@ -194,7 +197,7 @@ $doLoggingDetail = true; // =true to eanable detail logging, =false for no detai
 // changing stuff below this may cause you issues when updates to the script are done.
 // you change it, you own it :)
 //
-$useProdNWS = false; // =false, use preview V3 sites, =true, use production sites (after June 24, 2019)
+$useProdNWS = true; // =false, use preview V3 sites, =true, use production sites (after June 24, 2019)
 //
 $forceDualIconURL = false; // for TESTING prior to 7-Jul-2015 when new icons were used by NWS
 
@@ -204,7 +207,7 @@ $getGridpointData = false; // =true; for getting gridpoint data, =false for not 
 // following is for possible FUTURE hourly forecast/graphics use
 $getHourlyData = false; // =true; for getting hourly data, =false for not getting the data
 
-if(file_exists('Settings.php')) { include_once('Settings.php'); }
+#if(file_exists('Settings.php')) { include_once('Settings.php'); }
 // overrides from Settings.php if available
 global $SITE;
 if (isset($SITE['NWSforecasts']))    {$NWSforecasts = $SITE['NWSforecasts']; }
@@ -241,8 +244,8 @@ if ($useProdNWS) {
   // final production URLs
   define('APIURL', "https://api.weather.gov");
   define('FCSTURL', "https://forecast.weather.gov");
-  define('ALERTAPIURL', 'https://api.weather.gov/alerts?active=1&point=');
-  define('ALERTURL', 'https://alerts.weather.gov/products/');
+  define('ALERTAPIURL', 'https://api.weather.gov/alerts?status=actual&point=');
+  define('ALERTURL', 'https://forecast.weather.gov/showsigwx.php?warnzone=%s&amp;warncounty=%s&amp;firewxzone=%s&amp;lat=%s&amp;lon=%s&amp;local_place1=%s&amp;product1=%s');
 }
 else {
   // pre-production/testing URLs
@@ -349,21 +352,26 @@ $cacheName = $cacheFileDir . "forecast-" . $NOAAZone . "-$haveZone-geojson.txt";
 
 $Status = "<!-- $Version on PHP " . phpversion() . "-->\n<!-- RAW NWS URL: $fileName  zone=$NOAAZone -->\n";
 
-if (isset($_REQUEST['sce']) && strtolower($_REQUEST['sce']) == 'view') {
-
-  // --self downloader --
-
-  $filenameReal = __FILE__;
-  $download_size = filesize($filenameReal);
-  header('Pragma: public');
-  header('Cache-Control: private');
-  header('Cache-Control: no-cache, must-revalidate');
-  header("Content-type: text/plain,charset=ISO-8859-1");
-  header("Accept-Ranges: bytes");
-  header("Content-Length: $download_size");
-  header('Connection: close');
-  readfile($filenameReal);
-  exit;
+if (isset($_REQUEST['sce']) && strtolower($_REQUEST['sce']) == 'view' 
+    and strlen($_REQUEST['sce']) == 4) {
+   //--self downloader --
+   $filenameReal = __FILE__;
+   $download_size = filesize($filenameReal);
+   header('Pragma: public');
+   header('Cache-Control: private');
+   header('Cache-Control: no-cache, must-revalidate');
+   header("Content-type: text/plain");
+   header("Accept-Ranges: bytes");
+   header("Content-Length: $download_size");
+   header('Connection: close');
+   
+   readfile($filenameReal);
+   exit;
+}
+if (isset($_REQUEST['sce'])) {
+  header("HTTP/1.1 403 Forbidden");
+  print "<h1>Hacking attempt. Denied.</h1>\n";
+  exit();
 }
 
 global $fcstPeriods, $NWSICONLIST;
@@ -558,7 +566,7 @@ if (isset($matches[1])) {
 	}
 }
 $rawJSON = json_decode($content, true); // parse the JSON into an associative array
-$FCSTJSON = $rawJSON['properties'];      // geoJSON format
+$FCSTJSON = isset($rawJSON['properties'])?$rawJSON['properties']:array();      // geoJSON format
 if (strlen($content > 10) and function_exists('json_last_error')) { // report status, php >= 5.3.0 only
   switch (json_last_error()) {
   case JSON_ERROR_NONE:
@@ -1005,8 +1013,13 @@ if (strlen($alertContents) > 1) { // got some alerts.. process
             (in_array($META["countyZone"], $ALERT["geocode"]["UGC"]) ) 
 				  )
 				 )
-      {
-        $forecastwarnings.= '<a href="' . ALERTURL . $ALERT['id'] . '"' . ' title="' . $ALERT['headline'] . "\n---\n" . $ALERT['description'] . '" target="_blank">' . '<strong><span style="color: red">' . $ALERT['event'] . "</span></strong></a><br/>\n";
+      { list($lat,$long) = explode(',',$META['point']);
+			  $locName = $META['city']. " " . $META['state'];
+				$eventName =preg_replace('|( by .*)$|', '', $ALERT['headline']);
+		    $tURL = sprintf(ALERTURL,
+				  $META['forecastZone'],$META['countyZone'],$META['fireWeatherZone'],$lat,$long,
+					urlencode($locName),urlencode($ALERT['event']));
+        $forecastwarnings.= '<a href="' . $tURL . '"' . ' title="' . $ALERT['headline'] . "\n---\n" . $ALERT['description'] . '" target="_blank">' . '<strong><span style="color: red">' . $eventName . "</span></strong></a><br/>\n";
       }
       else {
         $Status.= "<!-- alert " . $ALERT['id'] . " " . $ALERT['headline'] . " expired - " . $ALERT['expires'] . " -->\n";
@@ -1601,7 +1614,10 @@ function make_zone_icon($day, $textforecast)
   global $Conditions, $Status, $iconDir, $iconType, $doDebug, $iconHeight, $iconWidth;
 
   $icon = "<strong>";
-  if (strpos($day, ' ') !== false) {
+  if(strpos($day,' Day') !== false) {# holiday
+    $icon .= str_replace(' Day','<br/>Day<br/>',$day);
+  }
+  elseif (strpos($day, ' ') !== false) {
     $icon.= wordwrap($day, 10, "<br/>", false) . '<br/>';
   }
   else {
@@ -2245,7 +2261,9 @@ function make_local_icon($icon, $period, $cond, $temperature, $details)
   // assemble the full icon to use
 
   $ticon = '<strong>';
-  if (strpos($period, ' ') !== false) {
+  if(strpos($period,' Day') !== false) { # handle holidays
+    $ticon .= str_replace(' Day', '<br/>Day<br/>', $period);
+  } elseif (strpos($period, ' ') !== false) {
     $ticon.= wordwrap($period, 10, "<br/>", false) . '<br/>';
 
     // $ticon = str_replace(' ','<br/>',$ticon) . '<br/>';
@@ -2409,7 +2427,7 @@ function get_meta_info($mainCache, $pointURL, $zoneURL)
     $content = (string)array_pop($stuff); // last one is the content
     $headers = (string)array_pop($stuff); // next-to-last-one is the headers
     $rawPJSON = json_decode($content, true); // parse the JSON into an associative array
-		$PJSON  = $rawPJSON['properties'];       // geojson format
+		$PJSON  = isset($rawPJSON['properties'])?$rawPJSON['properties']:array();       // geojson format
     if (json_last_error() == JSON_ERROR_NONE) { // got the point METADATA.. stuff it away
       if ($doDebug) {
         $Status.= "<!-- zone raw data\n" . print_r($PJSON, true) . " -->\n";
