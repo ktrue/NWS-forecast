@@ -18,6 +18,7 @@
 # Version 1.02 - 26-May-2018 - changes for NWS website icon usage (Tropical Storm/Hurricane)
 # Version 1.03 - 29-Mar-2022 - fix PHP 8.1 Deprecated errata
 # Version 1.04 - 06-Apr-2022 - fix more PHP 8.1 Deprecated errata
+# Version 1.05 - 21-May-2026 - fix errata for PHP 8.5+
 #
 #----------------------------------------------------------------------------------------
 # Settings:
@@ -146,7 +147,8 @@ $NWSICONS = array(
 );
 # program constants.. do not change these:
 $imgExt = '.png'; # all SOURCE image templates are .png -- DON'T change this!
-$TTfont = $imgBaseDir . 'fradmcn.ttf'; // location/name of TTF font to write PoP on image
+# Note: PHP 8.5 needs abs path for the TT font file location
+$TTfont = realpath($imgBaseDir).'/fradmcn.ttf'; // location/name of TTF font to write PoP on image
 $imgOverlay = $imgBaseDir . 'overlay-86x15.png';  # for the semi-transparent overlay for numbers
 $saveDir    = './forecast/images/'; # optional save images to this directory
 $saveType = 'jpg'; # only used for saving png=86x86, jpg=55x55
@@ -220,7 +222,7 @@ if(file_exists($imgBaseDir . $leftIcon . $imgExt)) {
     $SceY = imagesy($timg);
 	$LIMG = imagecreatetruecolor($imgSizeX,$imgSizeY);
     imagecopyresampled($LIMG,$timg,0,0,0,0,$imgSizeX,$imgSizeY,$SceX,$SceY);
-	imagedestroy($timg);
+	if (PHP_MAJOR_VERSION < 8) {imagedestroy($timg);}
 } else {
 	$LIMG = false;
 }
@@ -231,7 +233,7 @@ if(file_exists($imgBaseDir . $rightIcon . $imgExt)) {
     $SceY = imagesy($timg);
 	$RIMG = imagecreatetruecolor($imgSizeX,$imgSizeY);
     imagecopyresampled($RIMG,$timg,0,0,0,0,$imgSizeX,$imgSizeY,$SceX,$SceY);
-	imagedestroy($timg);
+	if (PHP_MAJOR_VERSION < 8) {imagedestroy($timg);}
 } else {
 	$RIMG = false;
 }
@@ -333,7 +335,7 @@ if($doSaveImage) { // only processed if the image is saved
     imagecopyresampled($timg,$img,0,0,0,0,55,55,$imgSizeX,$imgSizeY);
 	$fn .= '.jpg';
 	imagejpeg($timg,$saveDir.$fn,95);
-	imagedestroy($timg);
+	if (PHP_MAJOR_VERSION < 8) {imagedestroy($timg);}
   } else {
 	$fn .= '.png';
 	imagepng($img,$saveDir.$fn);
@@ -352,7 +354,7 @@ if($doSaveImage) { // only processed if the image is saved
     imagecopyresampled($timg,$img,0,0,0,0,55,55,$imgSizeX,$imgSizeY);
 	header('Content-type: image/jpeg');
 	imagejpeg($timg);
-	imagedestroy($timg);
+	if (PHP_MAJOR_VERSION < 8) {imagedestroy($timg);}
 	
 }
 
@@ -360,10 +362,12 @@ if($doSaveImage) { // only processed if the image is saved
 # cleanup and exit
 #----------------------------------------------------------------------------------------
 
-imagedestroy($img);
-if($OIMG) {imagedestroy($OIMG);}
-if($LIMG) {imagedestroy($LIMG);}
-if($RIMG) {imagedestroy($RIMG);}
+if(PHP_MAJOR_VERSION < 8) {
+  imagedestroy($img);
+  if($OIMG) {imagedestroy($OIMG);}
+  if($LIMG) {imagedestroy($LIMG);}
+  if($RIMG) {imagedestroy($RIMG);}
+}
 
 return(0);
 
@@ -480,20 +484,20 @@ function copy_image($img,$side,$sceimg,$from) {
   if(preg_match('!^\d+$!',$from)) { # source 1/2 image at starting X offset
 	  $frX =$from;
 	  $frY = $imgY;
-	  $frW = (integer)$imgX/2;
+	  $frW = (int)$imgX/2;
   } elseif($from == 'L') { # source from left half of image
 	  $frX =0;
 	  $frY = $imgY;
-	  $frW = (integer)$imgX/2;
+	  $frW = (int)$imgX/2;
 	  
   } elseif ($from == 'R') { # source from right half of image
-	  $frX = (integer)$imgX/2;
+	  $frX = (int)$imgX/2;
 	  $frY = $imgY;
-	  $frW = (integer)$imgX/2;
+	  $frW = (int)$imgX/2;
   } else { # source from middle of image
-    $frX = (integer)$imgX/4;
+    $frX = (int)$imgX/4;
 	  $frY = $imgY;
-	  $frW = (integer)$imgX/2;
+	  $frW = (int)$imgX/2;
   }
  
   if($side == 'L') { # draw to left-side

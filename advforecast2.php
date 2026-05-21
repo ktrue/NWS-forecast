@@ -66,9 +66,9 @@
 //  Version 5.19 - 27-Dec-2022 - fixes for PHP 8.2
 //  Version 5.20 - 24-Jun-2024 - fixes for alert link to display alerts using forecast.weather.gov/showsigwx.php
 //  Version 5.21 - 26-Aug-2025 - adjust display for holiday legends
-//
+//  Version 5.22 - 21-May-2026 - fixes for PHP 8.5
 
-$Version = 'advforecast2.php (JSON) - V5.21 - 26-Aug-2025';
+$Version = 'advforecast2.php (JSON) - V5.22 - 21-May-2026';
 
 //
 // import NOAA Forecast info
@@ -1421,7 +1421,7 @@ function ADV_fetchUrlWithoutHanging($inurl)
 
     // $curlStatus .= "<!-- curl info\n".print_r($cinfo,true)." -->\n";
 
-    curl_close($ch); // close the cURL session
+    if(PHP_MAJOR_VERSION < 8) {curl_close($ch);} // close the cURL session
 
     // $curlStatus .= "<!-- raw data\n".$data."\n -->\n";
     $stuff = explode("\r\n\r\n",$data); // maybe we have more than one header due to redirects.
